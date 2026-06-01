@@ -17,16 +17,13 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Read App Name
+      - name: Setup Project Files
         run: |
+          APP_NAME="My App"
           if [ -f "app-name.txt" ]; then
-            echo "APP_NAME=$(head -1 app-name.txt | tr -d '\r\n')" >> $GITHUB_ENV
-          else
-            echo "APP_NAME=My App" >> $GITHUB_ENV
+            APP_NAME=$(head -1 app-name.txt | tr -d '\r\n')
           fi
 
-      - name: Create Android Project
-        run: |
           mkdir -p app/src/main/java/com/myapp/webview
           mkdir -p app/src/main/res/layout
           mkdir -p app/src/main/res/values
@@ -38,76 +35,24 @@ jobs:
           mkdir -p app/src/main/assets
           mkdir -p gradle/wrapper
 
-          # Web files copy karo assets mein
           if [ -d "web" ]; then
             cp -r web/. app/src/main/assets/
-            echo "Web files copied!"
           else
             echo "ERROR: web/ folder nahi mila!" && exit 1
           fi
 
-          # App name file mein save karo
-          echo "${{ env.APP_NAME }}" > /tmp/app_name.txt
+          printf 'rootProject.name = "MyApp"\ninclude '"'"':app'"'"'\n' > settings.gradle
 
-          python3 << 'PYEOF'
-import os
+          printf 'buildscript {\n  repositories { google(); mavenCentral() }\n  dependencies { classpath '"'"'com.android.tools.build:gradle:8.2.0'"'"' }\n}\nallprojects { repositories { google(); mavenCentral() } }\n' > build.gradle
 
-with open('/tmp/app_name.txt', 'r') as f:
-    app_name = f.read().strip()
+          printf 'android.useAndroidX=true\nandroid.enableJetifier=true\n' > gradle.properties
 
-print(f"App name: {app_name}")
+          printf 'plugins { id '"'"'com.android.application'"'"' }\nandroid {\n  namespace '"'"'com.myapp.webview'"'"'\n  compileSdk 34\n  defaultConfig {\n    applicationId "com.myapp.webview"\n    minSdk 21\n    targetSdk 34\n    versionCode 1\n    versionName "1.0"\n  }\n  buildTypes {\n    debug { minifyEnabled false }\n    release { minifyEnabled false }\n  }\n  compileOptions {\n    sourceCompatibility JavaVersion.VERSION_1_8\n    targetCompatibility JavaVersion.VERSION_1_8\n  }\n}\ndependencies {\n  implementation '"'"'androidx.appcompat:appcompat:1.6.1'"'"'\n}\n' > app/build.gradle
 
-# settings.gradle
-open('settings.gradle', 'w').write('rootProject.name = "MyApp"\ninclude \':app\'\n')
+          printf '# ProGuard rules\n' > app/proguard-rules.pro
 
-# Root build.gradle
-open('build.gradle', 'w').write(
-'''buildscript {
-    repositories { google(); mavenCentral() }
-    dependencies { classpath 'com.android.tools.build:gradle:8.2.0' }
-}
-allprojects {
-    repositories { google(); mavenCentral() }
-}
-''')
-
-# gradle.properties
-open('gradle.properties', 'w').write(
-'android.useAndroidX=true\nandroid.enableJetifier=true\n')
-
-# app/build.gradle
-open('app/build.gradle', 'w').write(
-'''plugins { id 'com.android.application' }
-android {
-    namespace 'com.myapp.webview'
-    compileSdk 34
-    defaultConfig {
-        applicationId "com.myapp.webview"
-        minSdk 21
-        targetSdk 34
-        versionCode 1
-        versionName "1.0"
-    }
-    buildTypes {
-        debug { minifyEnabled false }
-        release { minifyEnabled false }
-    }
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
-}
-dependencies {
-    implementation 'androidx.appcompat:appcompat:1.6.1'
-}
-''')
-
-# app/proguard-rules.pro
-open('app/proguard-rules.pro', 'w').write('# Default ProGuard rules\n')
-
-# AndroidManifest.xml
-open('app/src/main/AndroidManifest.xml', 'w').write(
-'''<?xml version="1.0" encoding="utf-8"?>
+          cat > app/src/main/AndroidManifest.xml << 'XMLEOF'
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <application
@@ -130,11 +75,33 @@ open('app/src/main/AndroidManifest.xml', 'w').write(
         </activity>
     </application>
 </manifest>
-''')
+XMLEOF
 
-# MainActivity.java
-open('app/src/main/java/com/myapp/webview/MainActivity.java', 'w').write(
-'''package com.myapp.webview;
+          cat > app/src/main/res/layout/activity_main.xml << 'XMLEOF'
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+    <WebView android:id="@+id/webview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+</RelativeLayout>
+XMLEOF
+
+          printf '<resources>\n    <string name="app_name">%s</string>\n</resources>\n' "$APP_NAME" > app/src/main/res/values/strings.xml
+
+          cat > app/src/main/res/values/themes.xml << 'XMLEOF'
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.MyApp" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>
+XMLEOF
+
+          cat > app/src/main/java/com/myapp/webview/MainActivity.java << 'JAVAEOF'
+package com.myapp.webview;
 import android.annotation.SuppressLint;
 import android.os.Bundle;
 import android.view.View;
@@ -149,9 +116,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().setFlags(
-            WindowManager.LayoutParams.FLAG_FULLSCREEN,
-            WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         if (getSupportActionBar() != null) getSupportActionBar().hide();
         setContentView(R.layout.activity_main);
         webView = findViewById(R.id.webview);
@@ -175,49 +140,16 @@ public class MainActivity extends AppCompatActivity {
         else super.onBackPressed();
     }
 }
-''')
-
-# activity_main.xml
-open('app/src/main/res/layout/activity_main.xml', 'w').write(
-'''<?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent">
-    <WebView android:id="@+id/webview"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
-</RelativeLayout>
-''')
-
-# strings.xml
-open('app/src/main/res/values/strings.xml', 'w').write(
-f'<resources>\n    <string name="app_name">{app_name}</string>\n</resources>\n')
-
-# themes.xml
-open('app/src/main/res/values/themes.xml', 'w').write(
-'''<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <style name="Theme.MyApp" parent="Theme.AppCompat.Light.NoActionBar">
-        <item name="android:windowFullscreen">true</item>
-        <item name="android:windowBackground">@android:color/black</item>
-    </style>
-</resources>
-''')
-
-print("All files created successfully!")
-PYEOF
+JAVAEOF
 
       - name: Generate App Icons
         run: |
           for entry in "mdpi:48" "hdpi:72" "xhdpi:96" "xxhdpi:144" "xxxhdpi:192"; do
             density="${entry%%:*}"
             size="${entry##*:}"
-            convert -size ${size}x${size} xc:'#2196F3' \
-              app/src/main/res/mipmap-${density}/ic_launcher.png
-            convert -size ${size}x${size} xc:'#2196F3' \
-              app/src/main/res/mipmap-${density}/ic_launcher_round.png
+            convert -size ${size}x${size} xc:'#2196F3' app/src/main/res/mipmap-${density}/ic_launcher.png
+            convert -size ${size}x${size} xc:'#2196F3' app/src/main/res/mipmap-${density}/ic_launcher_round.png
           done
-          echo "Icons generated!"
 
       - name: Install Gradle and Fix Wrapper
         run: |
@@ -234,4 +166,3 @@ PYEOF
         with:
           name: MyApp-APK
           path: app/build/outputs/apk/debug/app-debug.apk
- 
